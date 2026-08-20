@@ -1,11 +1,10 @@
 import json
 import weakref
-import traceback
 from typing import Optional, TYPE_CHECKING
 
 import asyncio
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
-from .models import ClientConfig, ApiName
+from .models import ClientConfig
 from .utils import event_parser, handle_event
 
 if TYPE_CHECKING:
@@ -43,6 +42,14 @@ class WebsocketClient:
         if self._running:
             return
         self._running = True
+        if self.bridge:
+            self.bridge.update_status(
+                self.server_name,
+                direction="forward",
+                connected=False,
+                attempts=0,
+                last_error="",
+            )
         self._task = asyncio.create_task(self._run_loop())
 
     async def _run_loop(self) -> None:
@@ -51,6 +58,8 @@ class WebsocketClient:
 
         while self._running:
             attempt += 1
+            if self.bridge:
+                self.bridge.update_status(self.server_name, attempts=attempt)
 
             try:
                 # 检查服务器名称是否已被占用
@@ -72,8 +81,9 @@ class WebsocketClient:
                 async with ws_connect(self.ws_url, additional_headers=headers) as ws:
                     self._ws = ws
                     attempt = 0  # 连接成功后重置计数
+                    self.bridge.update_status(self.server_name, attempts=0, last_error="")
 
-                    success = await self.bridge.register(self.server_name, ws)
+                    success = await self.bridge.register(self.server_name, ws, "forward")
                     if not success:
                         self._running = False # 确保停止
                         break
@@ -103,15 +113,21 @@ class WebsocketClient:
                 }, server_name=self.server_name, is_reverse=False)
                 self._running = False
                 break # 协程被关闭，此时需要退出
-            except Exception as e :
+            except Exception as e:
+                if self.bridge:
+                    self.bridge.update_status(
+                        self.server_name,
+                        connected=False,
+                        last_error=str(e),
+                    )
                 await self.bridge.bus.emit("system", {
-                    "message": f"与服务器 [{self.server_name}] 的连接出错: {e}\n{traceback.format_exc()}",
+                    "message": f"与服务器 [{self.server_name}] 的连接出错（第 {attempt} 次）: {e}",
                     "server_name": self.server_name,
                     "level": "error"
                 }, server_name=self.server_name, is_reverse=False)
                 continue
             finally:
-                if self.bridge.is_registered(self.server_name):
+                if self.bridge and self.bridge.is_registered(self.server_name):
                     await self.bridge.unregister(self.server_name)
 
             self._ws = None
@@ -120,7 +136,7 @@ class WebsocketClient:
                 self._running = False
                 break
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(min(60, 2 ** min(attempt - 1, 5)))
 
     async def stop(self) -> None:
         self._running = False

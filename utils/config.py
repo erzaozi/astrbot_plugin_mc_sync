@@ -10,12 +10,19 @@ from pydantic import BaseModel, Field
 
 class PluginConfig(BaseModel):
     sync_config: list[SyncConfig] = Field(default_factory=list, description="服务器同步列表配置")
-    cicode_enabled: bool = Field(default_factory=bool, description="同步图片是否启用CICode")
 
 class SyncConfig(BaseModel):
     """单个 MC 服务器同步配置"""
     server_name: str = Field(default_factory=str, description="服务器名")
     umo_list: list[str] = Field(default_factory=list, description="绑定的UMO会话列表")
+    cicode_enabled: bool = Field(True, description="该服务器是否启用 CICode 图片")
+    administrators: list[str] = Field(default_factory=list, description="服务器管理员 UID 列表")
+    forward_player_join: bool = Field(True, description="是否转发玩家加入事件")
+    forward_player_quit: bool = Field(True, description="是否转发玩家退出事件")
+    forward_player_death: bool = Field(True, description="是否转发玩家死亡事件")
+    forward_player_achievement: bool = Field(True, description="是否转发玩家成就事件")
+    rcon_enabled: bool = Field(False, description="是否允许 RCON")
+    rcon_command_whitelist: list[str] = Field(default_factory=list, description="RCON 命令白名单")
 
 class ConfigManager:
     """配置文件管理器。
@@ -68,6 +75,35 @@ class ConfigManager:
     def apply_model(self, data: dict) -> None:
         self._plugin_config = PluginConfig.model_validate(data)
         self.save()
+
+    def get_server(self, server_name: str) -> SyncConfig | None:
+        """Find a server synchronization configuration by name.
+
+        Args:
+            server_name: The configured MC server name.
+
+        Returns:
+            The matching configuration, or None when it does not exist.
+        """
+        return next(
+            (item for item in self._plugin_config.sync_config if item.server_name == server_name),
+            None,
+        )
+
+    def ensure_server(self, server_name: str) -> SyncConfig:
+        """Create a default synchronization configuration when absent.
+
+        Args:
+            server_name: The MC server name.
+
+        Returns:
+            The existing or newly created server configuration.
+        """
+        server = self.get_server(server_name)
+        if server is None:
+            server = SyncConfig(server_name=server_name)
+            self._plugin_config.sync_config.append(server)
+        return server
 
     # ---------- 属性 ----------
 

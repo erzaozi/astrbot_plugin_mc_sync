@@ -1,5 +1,6 @@
 import re
 import asyncio
+import uuid
 from abc import ABC, abstractmethod
 
 from astrbot.api.platform import Platform, AstrBotMessage, MessageMember, PlatformMetadata, MessageType
@@ -50,11 +51,12 @@ class QueQiaoPlatformBase(Platform, ABC):
 
     async def send_by_session(self, session: MessageSesion, message_chain: MessageChain):
         session_id = session.session_id
+        server_config = ConfigManager().get_server(session_id)
         await QueQiaoMessageEvent.send_message(
             bot=self.bot,
             message_chain=message_chain,
             session_id=session_id,
-            cicode_enabled=ConfigManager().config.cicode_enabled,
+            cicode_enabled=server_config.cicode_enabled if server_config else True,
         )
         await super().send_by_session(session, message_chain)
 
@@ -95,6 +97,7 @@ class QueQiaoPlatformBase(Platform, ABC):
         async def handle_player_chat(event: PlayerChatEvent, **kwargs):
             if self._should_ignore_event(kwargs):
                 return
+            self.bot.mark_event(kwargs.get("server_name", event.server_name))
             abm = self._convert_queqiao_message(
                 event={**event.model_dump(exclude_none=True)},
                 server_name=kwargs.get("server_name")
@@ -105,6 +108,7 @@ class QueQiaoPlatformBase(Platform, ABC):
         async def handle_player_command(event: PlayerCommandEvent, **kwargs):
             if self._should_ignore_event(kwargs):
                 return
+            self.bot.mark_event(kwargs.get("server_name", event.server_name))
             logger.info(
                 f"[Server: {kwargs.get('server_name')}]"
                 f"{event.player.get('nickname', '未知玩家')}"
@@ -115,43 +119,67 @@ class QueQiaoPlatformBase(Platform, ABC):
         async def handle_player_join(event: PlayerJoinEvent, **kwargs):
             if self._should_ignore_event(kwargs):
                 return
-            logger.info(
-                f"[Server: {kwargs.get('server_name')}]"
-                f"{event.player.get('nickname', '未知玩家')}"
-                f"({event.player.get('uuid', '未知uuid')}) 加入了游戏"
-            )
+            server_name = kwargs.get("server_name", event.server_name)
+            self.bot.mark_event(server_name)
+            server_config = ConfigManager().get_server(server_name)
+            if server_config and server_config.forward_player_join:
+                await self.handle_msg(
+                    self._convert_notice_message(
+                        server_name,
+                        event.player,
+                        f"{event.player.get('nickname', '未知玩家')} 加入了游戏",
+                    ),
+                )
 
         @self.bot.on_notice("player_quit")
         async def handle_player_quit(event: PlayerQuitEvent, **kwargs):
             if self._should_ignore_event(kwargs):
                 return
-            logger.info(
-                f"[Server: {kwargs.get('server_name')}]"
-                f"{event.player.get('nickname', '未知玩家')}"
-                f"({event.player.get('uuid', '未知uuid')}) 离开了游戏"
-            )
+            server_name = kwargs.get("server_name", event.server_name)
+            self.bot.mark_event(server_name)
+            server_config = ConfigManager().get_server(server_name)
+            if server_config and server_config.forward_player_quit:
+                await self.handle_msg(
+                    self._convert_notice_message(
+                        server_name,
+                        event.player,
+                        f"{event.player.get('nickname', '未知玩家')} 离开了游戏",
+                    ),
+                )
 
         @self.bot.on_notice("player_death")
         async def handle_player_death(event: PlayerDeathEvent, **kwargs):
             if self._should_ignore_event(kwargs):
                 return
-            logger.info(
-                f"[Server: {kwargs.get('server_name')}]"
-                f"{event.player.get('nickname', '未知玩家')}"
-                f"({event.player.get('uuid', '未知uuid')}) 死亡:"
-                f"{event.death.get('key')}=={event.death.get('args')}=={event.death.get('text')}"
-            )
+            server_name = kwargs.get("server_name", event.server_name)
+            self.bot.mark_event(server_name)
+            death_text = event.death.get("text") or event.death.get("key") or "死亡"
+            server_config = ConfigManager().get_server(server_name)
+            if server_config and server_config.forward_player_death:
+                await self.handle_msg(
+                    self._convert_notice_message(
+                        server_name,
+                        event.player,
+                        f"{event.player.get('nickname', '未知玩家')} {death_text}",
+                    ),
+                )
 
         @self.bot.on_notice("player_achievement")
         async def handle_player_achievement(event: PlayerAchievementEvent, **kwargs):
             if self._should_ignore_event(kwargs):
                 return
-            logger.info(
-                f"[Server: {kwargs.get('server_name')}]"
-                f"{event.player.get('nickname', '未知玩家')}"
-                f"({event.player.get('uuid', '未知uuid')}) 获得成就:"
-                f"{event.achievement.get('key')}=={event.achievement.get('display')}=={event.achievement.get('translate')}"
-            )
+            server_name = kwargs.get("server_name", event.server_name)
+            self.bot.mark_event(server_name)
+            achievement = event.achievement.get("display") or event.achievement.get("translate") or event.achievement.get("key") or "未知成就"
+            server_config = ConfigManager().get_server(server_name)
+            if server_config and server_config.forward_player_achievement:
+                await self.handle_msg(
+                    self._convert_notice_message(
+                        server_name,
+                        event.player,
+                        f"{event.player.get('nickname', '未知玩家')} 获得成就：{achievement}",
+                    ),
+                )
 
         @self.bot.on_system()
         async def handle_system(data: dict, **kwargs):
@@ -164,7 +192,7 @@ class QueQiaoPlatformBase(Platform, ABC):
             elif level == "error":
                 logger.error(message)
             else:
-                logger.warn(message)
+                logger.warning(message)
 
     async def terminate(self):
         if self._network:
@@ -175,12 +203,13 @@ class QueQiaoPlatformBase(Platform, ABC):
         self.commit_event(self.create_event(message))
 
     def create_event(self, message: AstrBotMessage) -> QueQiaoMessageEvent:
+        server_config = ConfigManager().get_server(message.group_id)
         return QueQiaoMessageEvent(
             message_str=message.message_str,
             message_obj=message,
             platform_meta=self.meta(),
             session_id=message.session_id,
-            cicode_enabled=ConfigManager().config.cicode_enabled,
+            cicode_enabled=server_config.cicode_enabled if server_config else True,
             bot=self.bot,
         )
 
@@ -196,6 +225,37 @@ class QueQiaoPlatformBase(Platform, ABC):
         abm.self_id = extra_data['server_name']
         abm.session_id = extra_data['server_name']
         abm.message_id = event['message_id']
+        return abm
+
+    def _convert_notice_message(
+        self,
+        server_name: str,
+        player: dict,
+        message: str,
+    ) -> AstrBotMessage:
+        """Convert a Minecraft notice into an AstrBot group message.
+
+        Args:
+            server_name: The MC server that emitted the notice.
+            player: Player data from the QueQiao event.
+            message: Human-readable notice text.
+
+        Returns:
+            An AstrBot message that can be committed to the QueQiao adapter.
+        """
+        abm = AstrBotMessage()
+        abm.type = MessageType.GROUP_MESSAGE
+        abm.group_id = server_name
+        abm.message_str = message
+        abm.sender = MessageMember(
+            user_id=player.get("uuid", "unknown"),
+            nickname=player.get("nickname", "未知玩家"),
+        )
+        abm.message = [Plain(text=message)]
+        abm.raw_message = {"server_name": server_name, "message": message}
+        abm.self_id = server_name
+        abm.session_id = server_name
+        abm.message_id = uuid.uuid4().hex
         return abm
 
     @classmethod

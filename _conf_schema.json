@@ -1,9 +1,9 @@
 {
-    "server_sids": {
+    "sync_config": {
         "type": "text",
-        "description": "服务器与SID列表映射",
-        "hint": "请使用 JSON 格式配置，例如: {\"生存服\": [\"sid1\", \"sid2\"], \"创造服\": [\"sid3\"]}",
-        "default": "{}",
+        "description": "服务器同步配置",
+        "hint": "使用 Dashboard 页面管理。JSON 结构为服务器列表，每项支持会话、CICode、管理员、事件转发和 RCON 白名单配置。",
+        "default": "[]",
         "editor_mode": true,
         "editor_language": "json"
     }

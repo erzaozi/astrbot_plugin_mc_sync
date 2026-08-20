@@ -1,7 +1,8 @@
 import asyncio
 import functools
 import uuid
-from typing import Dict, Callable, Any, Awaitable, Tuple
+from datetime import datetime, timezone
+from typing import Dict, Callable, Any, Awaitable
 
 from websockets import ClientConnection, ServerConnection
 from .models import QueQiaoRequest, QueQiaoResponse, ApiName
@@ -22,25 +23,31 @@ class QueQiaoBridge:
     def __init__(self):
         if not self._initialized:
             type(self)._initialized = True
-        self.connections: Dict[str, ServerConnection | ClientConnection] = {}
-        self.bus: EventBus = EventBus() # 仅在反向ws连接时有效
-        self._connection_to_name: Dict[ServerConnection | ClientConnection, str] = {}  # 反向映射
-        self._connection_manager: ConnectionNameManager = ConnectionNameManager()
+            self.connections: Dict[str, ServerConnection | ClientConnection] = {}
+            self.bus: EventBus = EventBus()
+            self._connection_to_name: Dict[ServerConnection | ClientConnection, str] = {}
+            self._connection_manager: ConnectionNameManager = ConnectionNameManager()
+            self.on_message = create_event_decorator(self.on, 'message')
+            self.on_notice = create_event_decorator(self.on, 'notice')
+            self.on_system = create_event_decorator(self.on, 'system')
+            self.before_message = create_event_decorator(self.before, 'message')
+            self.before_notice = create_event_decorator(self.before, 'notice')
+            self.before_system = create_event_decorator(self.before, 'system')
+            self._pending: dict[str, asyncio.Future[QueQiaoResponse]] = {}
+            self.subscribe('callback', self.on_callback)
+            self.player_map = {}
+            self.connection_status: dict[str, dict] = {}
 
-        self.on_message = create_event_decorator(self.on, 'message')
-        self.on_notice = create_event_decorator(self.on, 'notice')
-        self.on_system = create_event_decorator(self.on, 'system')
-        self.before_message = create_event_decorator(self.before, 'message')
-        self.before_notice = create_event_decorator(self.before, 'notice')
-        self.before_system = create_event_decorator(self.before, 'system')
-        self._pending: dict[str, asyncio.Future[Tuple[QueQiaoResponse, str]]] = {}
-        self.subscribe('callback', self.on_callback)
-        self.player_map = {} # uuid -> player_name
-
-    async def register(self, name: str, ws: ServerConnection | ClientConnection) -> bool:
+    async def register(
+        self,
+        name: str,
+        ws: ServerConnection | ClientConnection,
+        direction: str = "unknown",
+    ) -> bool:
         if await self._connection_manager.register_name(name):
             self.connections[name] = ws
             self._connection_to_name[ws] = name
+            self.update_status(name, connected=True, direction=direction, last_error="")
             await self.bus.emit("system", {
                 "message": f"服务器 [{name}] 连接注册成功",
                 "server_name": name,
@@ -60,7 +67,8 @@ class QueQiaoBridge:
         if ws:
             del self._connection_to_name[ws]  # 移除反向映射
         await self._connection_manager.unregister_name(name)
-        del self.connections[name]
+        self.connections.pop(name, None)
+        self.update_status(name, connected=False)
         await self.bus.emit("system", {
             "message": f"服务器 [{name}] 连接已注销",
             "server_name": name,
@@ -77,6 +85,45 @@ class QueQiaoBridge:
     def get_connection_by_name(self, name: str) -> ServerConnection | ClientConnection | None:
         """通过名称获取连接"""
         return self.connections.get(name)
+
+    def update_status(self, name: str, **values) -> None:
+        """Update observable connection status for a server.
+
+        Args:
+            name: The MC server name.
+            **values: Status fields to merge into the current state.
+        """
+        status = self.connection_status.setdefault(
+            name,
+            {
+                "server_name": name,
+                "connected": False,
+                "direction": "unknown",
+                "attempts": 0,
+                "last_error": "",
+                "last_connected_at": None,
+                "last_event_at": None,
+            },
+        )
+        status.update(values)
+        if values.get("connected"):
+            status["last_connected_at"] = datetime.now(timezone.utc).isoformat()
+
+    def mark_event(self, name: str) -> None:
+        """Record the latest event timestamp for a server.
+
+        Args:
+            name: The MC server name.
+        """
+        self.update_status(name, last_event_at=datetime.now(timezone.utc).isoformat())
+
+    def get_status(self) -> list[dict]:
+        """Return a serializable snapshot of all known connections.
+
+        Returns:
+            Connection status records sorted by server name.
+        """
+        return [self.connection_status[name].copy() for name in sorted(self.connection_status)]
 
     def on(self, *event_names: str) -> Callable:
         def deco(func: Callable) -> Callable:
@@ -126,10 +173,10 @@ class QueQiaoBridge:
             result: QueQiaoResponse = await asyncio.wait_for(fut, timeout=timeout)
             return result
         except asyncio.TimeoutError:
-            await self._pending.pop(echo, None)
+            self._pending.pop(echo, None)
             raise TimeoutError(f"[{server_name}] 请求超时: {api}")
         except Exception:
-            await self._pending.pop(echo, None)
+            self._pending.pop(echo, None)
             raise Exception(f"[{server_name}] 请求失败: {api}")
 
     async def send_api_without_response(self, server_name: str, api: ApiName, data: dict | None, timeout: float = 30.0) -> None:
@@ -152,11 +199,11 @@ class QueQiaoBridge:
         except Exception:
             raise Exception(f"[{server_name}] 请求失败: {ApiName.BROADCAST}")
 
-    def on_callback(self, event: QueQiaoResponse, server_name: str) -> None:
-        echo = event.get("echo")
+    async def on_callback(self, event: QueQiaoResponse, server_name: str) -> None:
+        echo = event.echo
         fut = self._pending.pop(echo, None)
         if fut and not fut.done():
-            asyncio.get_running_loop().call_soon_threadsafe(fut.set_result, (event, server_name))
+            fut.set_result(event)
         return
 
     def cache_player(self, player: tuple[str, str]) -> None:

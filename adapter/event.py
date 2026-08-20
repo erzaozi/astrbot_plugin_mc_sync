@@ -52,7 +52,6 @@ class QueQiaoMessageEvent(AstrMessageEvent):
             await bot.broadcast(session_id, {
                 "message": msg_parts
             })
-            # TODO sendtitle
 
     @classmethod
     def _convert_astr_message(

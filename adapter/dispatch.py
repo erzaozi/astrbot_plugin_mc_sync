@@ -1,5 +1,5 @@
 import asyncio
-from typing import Callable, Awaitable, Any
+from typing import Callable, Awaitable
 from astrbot.api.event import MessageChain
 from astrbot.api import logger
 from . import QueQiaoBridge
@@ -58,17 +58,14 @@ async def send_message_by_umo(
 ) -> bool:
     config = ConfigManager().config
     sync_list = config.sync_config
-    cicode_enabled = config.cicode_enabled
-    target = [s.server_name for s in sync_list if umo in s.umo_list]
-    if target is None:
+    targets = [s for s in sync_list if umo in s.umo_list]
+    if not targets:
         return False
 
-    tasks = [send_func(
-        bot,
-        message_chain,
-        server_name,
-        cicode_enabled
-    ) for server_name in target]
+    tasks = [
+        send_func(bot, message_chain, server.server_name, server.cicode_enabled)
+        for server in targets
+    ]
     await asyncio.gather(*tasks, return_exceptions=True)
 
     return True

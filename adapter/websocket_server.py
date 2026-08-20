@@ -62,13 +62,14 @@ class WebsocketServer:
             if bridge is None:
                 await ws.close(1011, "QueQiao 内部错误")
                 return
-            if not await bridge.register(server_name, ws):
+            if not await bridge.register(server_name, ws, "reverse"):
                 await ws.close(4001, f"服务器名称 [{server_name}] 已被占用")
                 return
 
             try:
+                remote_address = ":".join(str(item) for item in (ws.remote_address or ()))
                 await self.bridge.bus.emit("system", {
-                    "message": f"服务器 [{server_name}]({":".join([str(i) for i in ws.remote_address])}) 反向 WS 连接成功",
+                    "message": f"服务器 [{server_name}]({remote_address}) 反向 WS 连接成功",
                     "server_name": server_name,
                     "level": "info"
                 }, server_name=server_name, is_reverse=True)
