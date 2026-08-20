@@ -127,7 +127,7 @@ class QueQiaoPlatformBase(Platform, ABC):
                     self._convert_notice_message(
                         server_name,
                         event.player,
-                        f"{event.player.get('nickname', '未知玩家')} 加入了游戏",
+                        "加入了游戏",
                     ),
                 )
 
@@ -143,7 +143,7 @@ class QueQiaoPlatformBase(Platform, ABC):
                     self._convert_notice_message(
                         server_name,
                         event.player,
-                        f"{event.player.get('nickname', '未知玩家')} 离开了游戏",
+                        "离开了游戏",
                     ),
                 )
 
@@ -154,14 +154,17 @@ class QueQiaoPlatformBase(Platform, ABC):
             server_name = kwargs.get("server_name", event.server_name)
             self.bot.mark_event(server_name)
             player_name = event.player.get("nickname", "未知玩家")
-            death_text = self._read_notice_text(event.death, "死亡")
+            death_text = self._without_player_name(
+                player_name,
+                self._read_notice_text(event.death, "死亡"),
+            )
             server_config = ConfigManager().get_server(server_name)
             if server_config and server_config.forward_player_death:
                 await self.handle_msg(
                     self._convert_notice_message(
                         server_name,
                         event.player,
-                        self._prefix_player_name(player_name, death_text),
+                        death_text or "死亡",
                     ),
                 )
 
@@ -171,7 +174,6 @@ class QueQiaoPlatformBase(Platform, ABC):
                 return
             server_name = kwargs.get("server_name", event.server_name)
             self.bot.mark_event(server_name)
-            player_name = event.player.get("nickname", "未知玩家")
             achievement = self._read_achievement_title(event.achievement)
             server_config = ConfigManager().get_server(server_name)
             if server_config and server_config.forward_player_achievement:
@@ -179,7 +181,7 @@ class QueQiaoPlatformBase(Platform, ABC):
                     self._convert_notice_message(
                         server_name,
                         event.player,
-                        f"{player_name} 获得成就：{achievement}",
+                        f"获得成就：{achievement}",
                     ),
                 )
 
@@ -238,6 +240,18 @@ class QueQiaoPlatformBase(Platform, ABC):
             return text
         return f"{player_name} {text}"
 
+    @staticmethod
+    def _without_player_name(player_name: str, text: str) -> str:
+        """Remove a leading player name from a server-generated notice."""
+        player_name = str(player_name or "未知玩家")
+        text = str(text or "").strip()
+        if text.casefold() == player_name.casefold():
+            return ""
+        prefix = f"{player_name} "
+        if text.casefold().startswith(prefix.casefold()):
+            return text[len(prefix):].lstrip()
+        return text
+
     def create_event(self, message: AstrBotMessage) -> QueQiaoMessageEvent:
         server_config = ConfigManager().get_server(message.group_id)
         return QueQiaoMessageEvent(
@@ -253,13 +267,17 @@ class QueQiaoPlatformBase(Platform, ABC):
         abm = AstrBotMessage()
 
         abm.type = MessageType.GROUP_MESSAGE
-        abm.group_id = extra_data['server_name']
-        abm.message_str = event['raw_message'].strip('"')
+        server_name = extra_data["server_name"]
+        player_name = event["player"].get("nickname", "未知玩家")
+        raw_message = event["raw_message"].strip('"')
+        prefix = self._source_prefix(server_name, player_name)
+        abm.group_id = server_name
+        abm.message_str = prefix + raw_message
         abm.sender = MessageMember(user_id=event['player']['uuid'], nickname=event['player']['nickname'])
-        abm.message = self._parse_cicode_components(event['raw_message'].strip('"'))
+        abm.message = [Plain(text=prefix), *self._parse_cicode_components(raw_message)]
         abm.raw_message = event
-        abm.self_id = extra_data['server_name']
-        abm.session_id = extra_data['server_name']
+        abm.self_id = server_name
+        abm.session_id = server_name
         abm.message_id = event['message_id']
         return abm
 
@@ -282,6 +300,8 @@ class QueQiaoPlatformBase(Platform, ABC):
         abm = AstrBotMessage()
         abm.type = MessageType.GROUP_MESSAGE
         abm.group_id = server_name
+        prefix = self._source_prefix(server_name, player.get("nickname", "未知玩家"))
+        message = f"{prefix}{message}"
         abm.message_str = message
         abm.sender = MessageMember(
             user_id=player.get("uuid", "unknown"),
@@ -293,6 +313,11 @@ class QueQiaoPlatformBase(Platform, ABC):
         abm.session_id = server_name
         abm.message_id = uuid.uuid4().hex
         return abm
+
+    @staticmethod
+    def _source_prefix(server_name: str, player_name: str) -> str:
+        """Build the source prefix for MC-originated messages."""
+        return f"[{server_name}][{player_name}] "
 
     @classmethod
     def _parse_cicode_components(cls, raw: str) -> list[BaseMessageComponent]:

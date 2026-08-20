@@ -133,6 +133,10 @@ class McSyncTests(unittest.TestCase):
             QueQiaoPlatformBase._prefix_player_name("ErZaozi", "was killed"),
             "ErZaozi was killed",
         )
+        self.assertEqual(
+            QueQiaoPlatformBase._without_player_name("ErZaozi", "ErZaozi was killed"),
+            "was killed",
+        )
 
     def test_api_result_prefers_success_data_over_generic_message(self):
         """Status and RCON commands should show useful response data."""
@@ -154,6 +158,13 @@ class McSyncTests(unittest.TestCase):
         self.assertEqual(
             QueQiaoPlugin._format_api_result(rcon_result),
             "Gave 64 [Diamond] to ErZaozi",
+        )
+
+    def test_mc_source_prefix_contains_server_and_player(self):
+        """MC-originated messages use a consistent server/player prefix."""
+        self.assertEqual(
+            QueQiaoPlatformBase._source_prefix("Server", "ErZaozi"),
+            "[Server][ErZaozi] ",
         )
 
     def test_plugin_commands_are_not_forwarded_as_chat(self):
