@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
 from enum import Enum
 
 class ServerConfig(BaseModel):
@@ -38,7 +38,8 @@ class QueQiaoResponse(BaseModel):
     status: str = ""
     message: str = ""
     echo: str = ""
-    data: dict | None = Field(default_factory=dict)
+    # API responses may contain structured data or plain text, such as RCON output.
+    data: Any = Field(default_factory=dict)
 
 class PlayerChatEvent(BaseModel):
     """玩家加入事件"""

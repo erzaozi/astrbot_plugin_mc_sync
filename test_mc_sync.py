@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from astrbot_plugin_mc_sync.adapter import dispatch
 from astrbot_plugin_mc_sync.filter import ServerAdminFilter
+from astrbot_plugin_mc_sync.adapter.models import QueQiaoResponse
 from astrbot_plugin_mc_sync.utils.config import PluginConfig, SyncConfig
 
 
@@ -76,6 +77,16 @@ class McSyncTests(unittest.TestCase):
     def test_plugin_module_imports_with_llm_tool_registration(self):
         """The plugin module must load successfully under AstrBot's decorators."""
         __import__("astrbot_plugin_mc_sync.main")
+
+    def test_rcon_response_accepts_plain_text_data(self):
+        """RCON responses may return command output as a string."""
+        response = QueQiaoResponse(
+            code=0,
+            api="send_rcon_command",
+            post_type="response",
+            data="Gave 64 [Diamond] to ErZaozi\n",
+        )
+        self.assertIn("Diamond", response.data)
 
 
 if __name__ == "__main__":
