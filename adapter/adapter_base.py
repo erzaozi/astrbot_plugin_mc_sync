@@ -164,7 +164,7 @@ class QueQiaoPlatformBase(Platform, ABC):
                     self._convert_notice_message(
                         server_name,
                         event.player,
-                        death_text or "死亡",
+                        self._prefix_player_name(player_name, death_text or "死亡"),
                     ),
                 )
 
@@ -269,7 +269,7 @@ class QueQiaoPlatformBase(Platform, ABC):
         abm.type = MessageType.GROUP_MESSAGE
         server_name = extra_data["server_name"]
         player_name = event["player"].get("nickname", "未知玩家")
-        raw_message = event["raw_message"].strip('"')
+        raw_message = event["raw_message"].strip().strip('"').strip()
         prefix = self._source_prefix(server_name, player_name)
         abm.group_id = server_name
         abm.message_str = prefix + raw_message

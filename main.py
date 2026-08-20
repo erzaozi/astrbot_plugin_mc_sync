@@ -4,7 +4,7 @@ import json
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.message_components import At
+from astrbot.api.message_components import At, Plain
 from astrbot.api.star import Context, Star
 from astrbot.api.web import error_response, json_response, request
 from astrbot.core.star.filter.command import GreedyStr
@@ -195,9 +195,13 @@ class QueQiaoPlugin(Star):
         """Forward non-Minecraft messages to bound Minecraft servers."""
         if self._is_plugin_command(event):
             return
+        if event.get_platform_name() == "QueQiao":
+            return
+        source_prefix = self._external_source_prefix(event)
+        message_chain = event.chain_result([Plain(text=source_prefix), *event.get_messages()])
         await send_message_by_umo(
             event.unified_msg_origin,
-            event.chain_result(event.get_messages()),
+            message_chain,
             QueQiaoMessageEvent.send_message,
             self.bot,
         )
@@ -210,6 +214,13 @@ class QueQiaoPlugin(Star):
             return False
         command = message.strip().split(maxsplit=1)
         return bool(command and command[0].casefold() in {"/mc", "/sync"})
+
+    @staticmethod
+    def _external_source_prefix(event: AstrMessageEvent) -> str:
+        """Build a source platform and sender prefix for MC-bound messages."""
+        platform = event.get_platform_name() or "未知平台"
+        sender = event.get_sender_name() or event.get_sender_id() or "未知用户"
+        return f"[{platform}][{sender}] "
 
     async def _server_api(self, event: AstrMessageEvent, server_name: str, api: ApiName, data: dict):
         """Send a server API request after checking server access.

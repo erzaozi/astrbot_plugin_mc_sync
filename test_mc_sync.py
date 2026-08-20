@@ -167,6 +167,20 @@ class McSyncTests(unittest.TestCase):
             "[Server][ErZaozi] ",
         )
 
+    def test_external_source_prefix_contains_platform_and_sender(self):
+        """Messages sent to MC identify their source platform and sender."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        event = SimpleNamespace(
+            get_platform_name=lambda: "aiocqhttp",
+            get_sender_name=lambda: "Alice",
+            get_sender_id=lambda: "10001",
+        )
+        self.assertEqual(
+            QueQiaoPlugin._external_source_prefix(event),
+            "[aiocqhttp][Alice] ",
+        )
+
     def test_plugin_commands_are_not_forwarded_as_chat(self):
         """Control commands must stop at AstrBot and not be sent to Minecraft."""
         from astrbot_plugin_mc_sync.main import QueQiaoPlugin
