@@ -162,10 +162,36 @@ class McSyncTests(unittest.TestCase):
 
     def test_mc_source_prefix_contains_server_and_player(self):
         """MC-originated messages use a consistent server/player prefix."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        event = SimpleNamespace(
+            get_group_id=lambda: "Server",
+            get_session_id=lambda: "Server",
+            get_sender_name=lambda: "ErZaozi",
+            get_sender_id=lambda: "uuid",
+        )
         self.assertEqual(
-            QueQiaoPlatformBase._source_prefix("Server", "ErZaozi"),
+            QueQiaoPlugin._mc_source_prefix(event),
             "[Server][ErZaozi] ",
         )
+
+    def test_mc_framework_message_keeps_raw_command_text(self):
+        """Framework parsing receives raw MC text without the display prefix."""
+        class TestAdapter(QueQiaoPlatformBase):
+            def meta(self):
+                return None
+
+        adapter = object.__new__(TestAdapter)
+        message = adapter._convert_queqiao_message(
+            {
+                "raw_message": "#tp一下我",
+                "player": {"uuid": "uuid", "nickname": "ErZaozi"},
+                "message_id": "message-1",
+            },
+            server_name="Server",
+        )
+        self.assertEqual(message.message_str, "#tp一下我")
+        self.assertEqual(message.message[0].text, "#tp一下我")
 
     def test_external_source_prefix_contains_platform_and_sender(self):
         """Messages sent to MC identify their source platform and sender."""

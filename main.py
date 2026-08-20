@@ -184,9 +184,11 @@ class QueQiaoPlugin(Star):
     @filter.custom_filter(QueQiaoPlatformFilter)
     async def on_queqiao(self, event: AstrMessageEvent):
         """Forward Minecraft-originated messages to bound conversations."""
+        source_prefix = self._mc_source_prefix(event)
+        message_chain = event.chain_result([Plain(text=source_prefix), *event.get_messages()])
         await send_message_by_server(
             event.session.session_id,
-            event.chain_result(event.get_messages()),
+            message_chain,
             self.context.send_message,
         )
 
@@ -221,6 +223,13 @@ class QueQiaoPlugin(Star):
         platform = event.get_platform_name() or "未知平台"
         sender = event.get_sender_name() or event.get_sender_id() or "未知用户"
         return f"[{platform}][{sender}] "
+
+    @staticmethod
+    def _mc_source_prefix(event: AstrMessageEvent) -> str:
+        """Build a display-only prefix for MC messages sent to other platforms."""
+        server = event.get_group_id() or event.get_session_id() or "未知服务器"
+        player = event.get_sender_name() or event.get_sender_id() or "未知玩家"
+        return f"[{server}][{player}] "
 
     async def _server_api(self, event: AstrMessageEvent, server_name: str, api: ApiName, data: dict):
         """Send a server API request after checking server access.

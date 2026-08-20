@@ -268,13 +268,11 @@ class QueQiaoPlatformBase(Platform, ABC):
 
         abm.type = MessageType.GROUP_MESSAGE
         server_name = extra_data["server_name"]
-        player_name = event["player"].get("nickname", "未知玩家")
         raw_message = event["raw_message"].strip().strip('"').strip()
-        prefix = self._source_prefix(server_name, player_name)
         abm.group_id = server_name
-        abm.message_str = prefix + raw_message
+        abm.message_str = raw_message
         abm.sender = MessageMember(user_id=event['player']['uuid'], nickname=event['player']['nickname'])
-        abm.message = [Plain(text=prefix), *self._parse_cicode_components(raw_message)]
+        abm.message = self._parse_cicode_components(raw_message)
         abm.raw_message = event
         abm.self_id = server_name
         abm.session_id = server_name
@@ -300,8 +298,6 @@ class QueQiaoPlatformBase(Platform, ABC):
         abm = AstrBotMessage()
         abm.type = MessageType.GROUP_MESSAGE
         abm.group_id = server_name
-        prefix = self._source_prefix(server_name, player.get("nickname", "未知玩家"))
-        message = f"{prefix}{message}"
         abm.message_str = message
         abm.sender = MessageMember(
             user_id=player.get("uuid", "unknown"),
@@ -313,11 +309,6 @@ class QueQiaoPlatformBase(Platform, ABC):
         abm.session_id = server_name
         abm.message_id = uuid.uuid4().hex
         return abm
-
-    @staticmethod
-    def _source_prefix(server_name: str, player_name: str) -> str:
-        """Build the source prefix for MC-originated messages."""
-        return f"[{server_name}][{player_name}] "
 
     @classmethod
     def _parse_cicode_components(cls, raw: str) -> list[BaseMessageComponent]:
