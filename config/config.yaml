@@ -1,0 +1,22 @@
+mc_ws_server_enable: true
+mc_ws_path: /minecraft/ws
+mc_ws_port: 25566
+mc_ws_password: ''
+mc_server_list:
+- server_name: Server
+  ws_able: true
+  ws_url: ws://127.0.0.1:25555
+  ws_token: ''
+  ws_max_attempts: -1
+  sid_list:
+  - webchat!erzaozi!936d1d0e-ec73-4303-9a18-30028abc005d
+  bot_self_id:
+  - webchat
+  command_user: []
+  rcon_command_whitelist: []
+debug_mode: true
+mc_send_group_name: true
+mc_display_server_name: true
+mc_say_way: 说：
+mc_image_enable: true
+mask_word: ''

@@ -1,0 +1,10 @@
+{
+    "server_sids": {
+        "type": "text",
+        "description": "服务器与SID列表映射",
+        "hint": "请使用 JSON 格式配置，例如: {\"生存服\": [\"sid1\", \"sid2\"], \"创造服\": [\"sid3\"]}",
+        "default": "{}",
+        "editor_mode": true,
+        "editor_language": "json"
+    }
+}

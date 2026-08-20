@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "display_name": "鹊桥 MC 同步插件",
+    "desc": "MC与QQ消息同步插件 — 基于鹊桥(QueQiao)WebSocket协议，同时支持在 MC 中调用LLM，LLM管理服务器。",
+    "short_desc": "MC与多平台消息同步插件 — 基于鹊桥(QueQiao)WebSocket协议",
+    "author": "二枣子"
+  }
+}
