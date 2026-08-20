@@ -193,12 +193,23 @@ class QueQiaoPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_other_platform(self, event: AstrMessageEvent):
         """Forward non-Minecraft messages to bound Minecraft servers."""
+        if self._is_plugin_command(event):
+            return
         await send_message_by_umo(
             event.unified_msg_origin,
             event.chain_result(event.get_messages()),
             QueQiaoMessageEvent.send_message,
             self.bot,
         )
+
+    @staticmethod
+    def _is_plugin_command(event: AstrMessageEvent) -> bool:
+        """Keep plugin control commands out of the normal MC chat stream."""
+        message = event.get_message_str()
+        if not isinstance(message, str):
+            return False
+        command = message.strip().split(maxsplit=1)
+        return bool(command and command[0].casefold() in {"/mc", "/sync"})
 
     async def _server_api(self, event: AstrMessageEvent, server_name: str, api: ApiName, data: dict):
         """Send a server API request after checking server access.

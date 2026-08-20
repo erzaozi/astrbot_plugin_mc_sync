@@ -156,6 +156,26 @@ class McSyncTests(unittest.TestCase):
             "Gave 64 [Diamond] to ErZaozi",
         )
 
+    def test_plugin_commands_are_not_forwarded_as_chat(self):
+        """Control commands must stop at AstrBot and not be sent to Minecraft."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        self.assertTrue(
+            QueQiaoPlugin._is_plugin_command(
+                SimpleNamespace(get_message_str=lambda: "/mc broadcast Server hello"),
+            ),
+        )
+        self.assertTrue(
+            QueQiaoPlugin._is_plugin_command(
+                SimpleNamespace(get_message_str=lambda: "  /sync on Server"),
+            ),
+        )
+        self.assertFalse(
+            QueQiaoPlugin._is_plugin_command(
+                SimpleNamespace(get_message_str=lambda: "hello /mc"),
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
