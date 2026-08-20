@@ -171,9 +171,8 @@ class QueQiaoPlugin(Star):
         """Execute an RCON command for an explicitly selected server.
 
         Args:
-            event: The user event that initiated the AI request.
-            server_name: The exact configured server name.
-            command: The command to execute without a leading slash.
+            server_name (string): The exact configured server name.
+            command (string): The command to execute without a leading slash.
 
         Returns:
             The command result or a permission error.

@@ -73,6 +73,10 @@ class McSyncTests(unittest.TestCase):
             self.assertTrue(custom_filter.filter(event, object()))
             self.assertFalse(custom_filter.filter(denied_event, object()))
 
+    def test_plugin_module_imports_with_llm_tool_registration(self):
+        """The plugin module must load successfully under AstrBot's decorators."""
+        __import__("astrbot_plugin_mc_sync.main")
+
 
 if __name__ == "__main__":
     unittest.main()
