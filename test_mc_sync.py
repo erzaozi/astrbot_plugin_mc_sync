@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from astrbot_plugin_mc_sync.adapter import dispatch
 from astrbot_plugin_mc_sync.filter import ServerAdminFilter
 from astrbot_plugin_mc_sync.adapter.models import QueQiaoResponse
+from astrbot_plugin_mc_sync.adapter.adapter_base import QueQiaoPlatformBase
 from astrbot_plugin_mc_sync.adapter.queqiao_manager import QueQiaoBridge
 from astrbot_plugin_mc_sync.utils.config import PluginConfig, SyncConfig
 
@@ -106,6 +107,54 @@ class McSyncTests(unittest.TestCase):
             return future.result()
 
         self.assertEqual(asyncio.run(run_callback()).echo, "echo-1")
+
+    def test_notice_text_is_readable_and_does_not_duplicate_player_name(self):
+        """Achievement titles are flattened and death names are not duplicated."""
+        achievement = {
+            "title": {
+                "key": "advancements.nether.netherite_armor.title",
+                "args": [],
+                "text": "Cover Me in Debris",
+            },
+            "description": {
+                "text": "Get a full suit of Netherite armor",
+            },
+            "frame": "challenge",
+        }
+        self.assertEqual(
+            QueQiaoPlatformBase._read_achievement_title(achievement),
+            "Cover Me in Debris",
+        )
+        self.assertEqual(
+            QueQiaoPlatformBase._prefix_player_name("ErZaozi", "ErZaozi was killed"),
+            "ErZaozi was killed",
+        )
+        self.assertEqual(
+            QueQiaoPlatformBase._prefix_player_name("ErZaozi", "was killed"),
+            "ErZaozi was killed",
+        )
+
+    def test_api_result_prefers_success_data_over_generic_message(self):
+        """Status and RCON commands should show useful response data."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        status_result = SimpleNamespace(
+            status="ok",
+            code=0,
+            message="success",
+            data={"players": 2, "max_players": 20},
+        )
+        rcon_result = SimpleNamespace(
+            status="ok",
+            code=0,
+            message="success",
+            data="Gave 64 [Diamond] to ErZaozi\n",
+        )
+        self.assertIn('"players": 2', QueQiaoPlugin._format_api_result(status_result))
+        self.assertEqual(
+            QueQiaoPlugin._format_api_result(rcon_result),
+            "Gave 64 [Diamond] to ErZaozi",
+        )
 
 
 if __name__ == "__main__":

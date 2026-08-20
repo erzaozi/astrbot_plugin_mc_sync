@@ -153,14 +153,15 @@ class QueQiaoPlatformBase(Platform, ABC):
                 return
             server_name = kwargs.get("server_name", event.server_name)
             self.bot.mark_event(server_name)
-            death_text = event.death.get("text") or event.death.get("key") or "死亡"
+            player_name = event.player.get("nickname", "未知玩家")
+            death_text = self._read_notice_text(event.death, "死亡")
             server_config = ConfigManager().get_server(server_name)
             if server_config and server_config.forward_player_death:
                 await self.handle_msg(
                     self._convert_notice_message(
                         server_name,
                         event.player,
-                        f"{event.player.get('nickname', '未知玩家')} {death_text}",
+                        self._prefix_player_name(player_name, death_text),
                     ),
                 )
 
@@ -170,14 +171,15 @@ class QueQiaoPlatformBase(Platform, ABC):
                 return
             server_name = kwargs.get("server_name", event.server_name)
             self.bot.mark_event(server_name)
-            achievement = event.achievement.get("display") or event.achievement.get("translate") or event.achievement.get("key") or "未知成就"
+            player_name = event.player.get("nickname", "未知玩家")
+            achievement = self._read_achievement_title(event.achievement)
             server_config = ConfigManager().get_server(server_name)
             if server_config and server_config.forward_player_achievement:
                 await self.handle_msg(
                     self._convert_notice_message(
                         server_name,
                         event.player,
-                        f"{event.player.get('nickname', '未知玩家')} 获得成就：{achievement}",
+                        f"{player_name} 获得成就：{achievement}",
                     ),
                 )
 
@@ -201,6 +203,40 @@ class QueQiaoPlatformBase(Platform, ABC):
 
     async def handle_msg(self, message: AstrBotMessage):
         self.commit_event(self.create_event(message))
+
+    @staticmethod
+    def _read_notice_text(data: dict, default: str) -> str:
+        """Read human-readable text from a notice payload."""
+        for key in ("text", "display", "translate", "key"):
+            value = data.get(key)
+            if isinstance(value, dict):
+                value = value.get("text") or value.get("display") or value.get("translate") or value.get("key")
+            if value:
+                return str(value)
+        return default
+
+    @classmethod
+    def _read_achievement_title(cls, achievement: dict) -> str:
+        """Use the readable advancement title instead of the raw payload."""
+        title = achievement.get("title")
+        if isinstance(title, dict):
+            title_text = cls._read_notice_text(title, "")
+            if title_text:
+                return title_text
+        elif title:
+            return str(title)
+        return cls._read_notice_text(achievement, "未知成就")
+
+    @staticmethod
+    def _prefix_player_name(player_name: str, text: str) -> str:
+        """Avoid adding a player name when the server text already contains it."""
+        player_name = str(player_name or "未知玩家")
+        text = str(text or "死亡").strip()
+        if text.casefold() == player_name.casefold() or text.casefold().startswith(
+            f"{player_name.casefold()} ",
+        ):
+            return text
+        return f"{player_name} {text}"
 
     def create_event(self, message: AstrBotMessage) -> QueQiaoMessageEvent:
         server_config = ConfigManager().get_server(message.group_id)

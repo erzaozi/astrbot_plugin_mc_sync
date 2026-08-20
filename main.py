@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import At
@@ -255,9 +257,17 @@ class QueQiaoPlugin(Star):
         """Format a QueQiao response for chat output."""
         if result is None:
             return "请求已发送"
-        if getattr(result, "status", "") == "ok" or getattr(result, "code", 1) == 0:
-            return str(getattr(result, "message", "请求成功") or "请求成功")
-        return str(getattr(result, "message", "请求失败") or "请求失败")
+        success = getattr(result, "status", "") == "ok" or getattr(result, "code", 1) == 0
+        message = str(
+            getattr(result, "message", "请求成功" if success else "请求失败")
+            or ("请求成功" if success else "请求失败"),
+        )
+        data = getattr(result, "data", None)
+        if success and data not in (None, "", {}, []):
+            if isinstance(data, (dict, list)):
+                return json.dumps(data, ensure_ascii=False, indent=2)
+            return str(data).strip() or message
+        return message
 
     async def web_config(self):
         """Read or replace plugin configuration for the Dashboard page."""
