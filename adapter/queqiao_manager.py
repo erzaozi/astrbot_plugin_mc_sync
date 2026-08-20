@@ -199,7 +199,12 @@ class QueQiaoBridge:
         except Exception:
             raise Exception(f"[{server_name}] 请求失败: {ApiName.BROADCAST}")
 
-    async def on_callback(self, event: QueQiaoResponse, server_name: str) -> None:
+    async def on_callback(
+        self,
+        event: QueQiaoResponse,
+        server_name: str | None = None,
+        **_: object,
+    ) -> None:
         echo = event.echo
         fut = self._pending.pop(echo, None)
         if fut and not fut.done():

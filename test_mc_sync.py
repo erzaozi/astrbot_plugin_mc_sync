@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from astrbot_plugin_mc_sync.adapter import dispatch
 from astrbot_plugin_mc_sync.filter import ServerAdminFilter
 from astrbot_plugin_mc_sync.adapter.models import QueQiaoResponse
+from astrbot_plugin_mc_sync.adapter.queqiao_manager import QueQiaoBridge
 from astrbot_plugin_mc_sync.utils.config import PluginConfig, SyncConfig
 
 
@@ -87,6 +88,24 @@ class McSyncTests(unittest.TestCase):
             data="Gave 64 [Diamond] to ErZaozi\n",
         )
         self.assertIn("Diamond", response.data)
+
+    def test_callback_accepts_connection_context_keywords(self):
+        """Callback routing metadata must not break response futures."""
+        async def run_callback():
+            bridge = object.__new__(QueQiaoBridge)
+            future = asyncio.get_running_loop().create_future()
+            bridge._pending = {"echo-1": future}
+            response = QueQiaoResponse(
+                code=0,
+                api="send_rcon_command",
+                post_type="response",
+                echo="echo-1",
+                data="ok",
+            )
+            await bridge.on_callback(response, server_name="Server", is_reverse=False)
+            return future.result()
+
+        self.assertEqual(asyncio.run(run_callback()).echo, "echo-1")
 
 
 if __name__ == "__main__":
