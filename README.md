@@ -2,7 +2,7 @@
 
 # ASTRBOT-PLUGIN-MC-SYNC
 
-- 一个适用于 [AstrBot](https://github.com/Soulter/AstrBot) 的 Minecraft 多平台互通插件
+- 一个适用于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 的 Minecraft 多平台互通插件
 
 - 基于 [QueQiao（鹊桥）](https://github.com/17TheWord/QueQiao) Mod 的 WebSocket 协议，实现 Minecraft 服务器与 QQ、Telegram、Discord、微信、钉钉等平台之间的**双向消息同步**与**远程控制**
 
@@ -28,7 +28,7 @@
 
 推荐使用 AstrBot WebUI 安装：
 
-1. 打开 AstrBot WebUI（默认 `http://localhost:6185`），进入「插件管理」
+1. 打开 AstrBot WebUI（默认 `http://localhost:6186`），进入「插件管理」
 2. 点击「添加插件」，填写仓库地址：`https://github.com/erzaozi/astrbot_plugin_mc_sync.git`
 3. 安装完成后在插件列表启用即可
 
