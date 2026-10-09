@@ -1,5 +1,11 @@
-from astrbot.core.star.filter.custom_filter import CustomFilter, AstrMessageEvent, AstrBotConfig
+from astrbot.core.star.filter.custom_filter import (
+    AstrBotConfig,
+    AstrMessageEvent,
+    CustomFilter,
+)
+
 from .utils.config import ConfigManager
+
 
 class QueQiaoPlatformFilter(CustomFilter):
     """只允许来自 'queqiao' 平台的消息通过"""
@@ -10,7 +16,7 @@ class QueQiaoPlatformFilter(CustomFilter):
 
     def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
         # 返回 True 表示通过，False 表示被过滤
-        return event.platform_meta.name == 'QueQiao'
+        return event.platform_meta.name == "QueQiao"
 
 
 class ServerAdminFilter(CustomFilter):
@@ -31,6 +37,15 @@ class ServerAdminFilter(CustomFilter):
 
         parts = event.get_message_str().strip().split()
         if len(parts) < 3:
+            if (
+                len(parts) == 2
+                and parts[0].lstrip("/#").casefold() == "mc"
+                and parts[1].casefold() == "status"
+            ):
+                return any(
+                    event.get_sender_id() in server.administrators
+                    for server in ConfigManager().config.sync_config
+                )
             return False
 
         server = ConfigManager().get_server(parts[2])

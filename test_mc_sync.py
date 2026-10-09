@@ -132,6 +132,23 @@ class McSyncTests(unittest.TestCase):
             self.assertTrue(custom_filter.filter(event, object()))
             self.assertFalse(custom_filter.filter(denied_event, object()))
 
+    def test_status_without_name_allows_server_administrator(self):
+        """Server administrators can query their accessible servers together."""
+        custom_filter = ServerAdminFilter()
+        config = PluginConfig(
+            sync_config=[SyncConfig(server_name="alpha", administrators=["42"])]
+        )
+        event = SimpleNamespace(
+            is_admin=lambda: False,
+            get_sender_id=lambda: "42",
+            get_message_str=lambda: "#mc status",
+        )
+        with patch(
+            "astrbot_plugin_mc_sync.filter.ConfigManager",
+            return_value=SimpleNamespace(config=config),
+        ):
+            self.assertTrue(custom_filter.filter(event, object()))
+
     def test_plugin_module_imports_with_llm_tool_registration(self):
         """The plugin module must load successfully under AstrBot's decorators."""
         __import__("astrbot_plugin_mc_sync.main")
@@ -145,6 +162,66 @@ class McSyncTests(unittest.TestCase):
             data="Gave 64 [Diamond] to ErZaozi\n",
         )
         self.assertIn("Diamond", response.data)
+
+    def test_disconnected_status_returns_message_without_handler_error(self):
+        """A disconnected server produces a readable reply to the status command."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        async def run_status():
+            bridge = object.__new__(QueQiaoBridge)
+            bridge.connections = {}
+            plugin = object.__new__(QueQiaoPlugin)
+            plugin.config_manager = SimpleNamespace(
+                get_server=lambda name: SyncConfig(server_name=name)
+            )
+            plugin.bot = bridge
+            event = SimpleNamespace(
+                is_admin=lambda: True,
+                plain_result=lambda message: message,
+            )
+            return [message async for message in plugin.mc_status(event, "Server")]
+
+        self.assertEqual(
+            asyncio.run(run_status()),
+            ["服务器 `Server` 未连接或连接已断开"],
+        )
+
+    def test_rcon_reports_disconnected_server_when_error_has_no_text(self):
+        """An empty transport exception still produces a useful RCON result."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        async def send_api(*args):
+            raise ConnectionError()
+
+        plugin = object.__new__(QueQiaoPlugin)
+        plugin.config_manager = SimpleNamespace(
+            get_server=lambda name: SyncConfig(
+                server_name=name,
+                rcon_enabled=True,
+                rcon_command_whitelist=["list"],
+            )
+        )
+        plugin.bot = SimpleNamespace(send_api=send_api)
+        event = SimpleNamespace(is_admin=lambda: True)
+
+        result = asyncio.run(plugin._run_rcon(event, "Server", "list"))
+        self.assertEqual(result, "RCON 执行失败: 服务器 `Server` 未连接或连接已断开")
+
+    def test_connection_lost_during_api_send_has_server_context(self):
+        """A closed connection during send is reported as a disconnect."""
+        from astrbot_plugin_mc_sync.adapter.models import ApiName
+
+        class DisconnectedSocket:
+            async def send(self, payload):
+                raise ConnectionError()
+
+        bridge = object.__new__(QueQiaoBridge)
+        bridge.connections = {"Server": DisconnectedSocket()}
+        bridge._pending = {}
+
+        with self.assertRaisesRegex(ConnectionError, "Server.*连接已断开"):
+            asyncio.run(bridge.send_api("Server", ApiName.GET_STATUS, {}))
+        self.assertFalse(bridge._pending)
 
     def test_llm_bound_servers_are_scoped_to_current_conversation(self):
         """Discovery returns all and only servers bound to the requesting session."""
@@ -246,6 +323,167 @@ class McSyncTests(unittest.TestCase):
             QueQiaoPlugin._format_api_result(rcon_result),
             "Gave 64 [Diamond] to ErZaozi",
         )
+
+    def test_status_summarizes_success_200_without_favicon(self):
+        """A QueQiao HTTP-style success code exposes useful status fields."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        response = QueQiaoResponse(
+            code=200,
+            api="get_status",
+            post_type="response",
+            status="SUCCESS",
+            message="success",
+            data={
+                "server_type": "forge",
+                "server_version": "1.21",
+                "server_list_ping": {
+                    "available": True,
+                    "players": {"online": 0.0, "max": 20.0},
+                    "favicon": "data:image/png;base64,...",
+                },
+                "cpu_information": {"cpu_cores": 16},
+                "memory_information": {
+                    "jvm_memory": {"used": 390560352, "max": 8573157376},
+                },
+            },
+        )
+        result = QueQiaoPlugin._format_status_result("Server", response)
+        self.assertIn("forge 1.21", result)
+        self.assertIn("在线玩家：0/20", result)
+        self.assertIn("JVM 内存", result)
+        self.assertNotIn("favicon", result)
+        self.assertNotIn("success", result)
+
+    def test_status_without_name_queries_only_authorized_servers(self):
+        """Bulk status excludes servers outside a server admin's scope."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        calls = []
+
+        async def send_api(name, api, data):
+            calls.append(name)
+            return QueQiaoResponse(
+                code=200,
+                api="get_status",
+                post_type="response",
+                status="SUCCESS",
+                data={"server_version": "1.21"},
+            )
+
+        plugin = object.__new__(QueQiaoPlugin)
+        config = PluginConfig(
+            sync_config=[
+                SyncConfig(server_name="alpha", administrators=["42"]),
+                SyncConfig(server_name="beta", administrators=["7"]),
+            ]
+        )
+        plugin.config_manager = SimpleNamespace(
+            config=config,
+            get_server=lambda name: next(
+                server for server in config.sync_config if server.server_name == name
+            ),
+        )
+        plugin.bot = SimpleNamespace(send_api=send_api)
+        event = SimpleNamespace(
+            is_admin=lambda: False,
+            get_sender_id=lambda: "42",
+            plain_result=lambda message: message,
+        )
+
+        async def run_status():
+            return [message async for message in plugin.mc_status(event)]
+
+        result = asyncio.run(run_status())[0]
+        self.assertEqual(calls, ["alpha"])
+        self.assertIn("alpha", result)
+        self.assertNotIn("beta", result)
+
+        calls.clear()
+        event.is_admin = lambda: True
+        all_result = asyncio.run(run_status())[0]
+        self.assertEqual(calls, ["alpha", "beta"])
+        self.assertIn("alpha", all_result)
+        self.assertIn("beta", all_result)
+
+    def test_llm_server_tools_share_command_permissions_and_payloads(self):
+        """LLM action tools use the same server checks and API payloads as commands."""
+        from astrbot_plugin_mc_sync.adapter.models import ApiName
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        calls = []
+
+        async def send_api(name, api, data):
+            calls.append((name, api, data))
+            return QueQiaoResponse(
+                code=200,
+                api=api.value,
+                post_type="response",
+                status="SUCCESS",
+                message="success",
+            )
+
+        plugin = object.__new__(QueQiaoPlugin)
+        plugin.config_manager = SimpleNamespace(
+            get_server=lambda name: (
+                SyncConfig(server_name=name, administrators=["42"])
+                if name == "alpha"
+                else None
+            ),
+        )
+        plugin.bot = SimpleNamespace(send_api=send_api)
+        allowed = SimpleNamespace(is_admin=lambda: False, get_sender_id=lambda: "42")
+        denied = SimpleNamespace(is_admin=lambda: False, get_sender_id=lambda: "7")
+
+        async def run_tools():
+            return [
+                await plugin.llm_mc_broadcast(allowed, "alpha", "hello"),
+                await plugin.llm_mc_private(allowed, "alpha", "player", "secret"),
+                await plugin.llm_mc_title(allowed, "alpha", "title"),
+                await plugin.llm_mc_actionbar(allowed, "alpha", "bar"),
+                await plugin.llm_mc_broadcast(denied, "alpha", "blocked"),
+            ]
+
+        results = asyncio.run(run_tools())
+        self.assertEqual(results[:4], ["success"] * 4)
+        self.assertIn("不是该服务器管理员", results[4])
+        self.assertEqual(
+            calls,
+            [
+                ("alpha", ApiName.BROADCAST, {"message": "hello"}),
+                (
+                    "alpha",
+                    ApiName.SEND_PRIVATE_MSG,
+                    {"user_id": "player", "message": "secret"},
+                ),
+                ("alpha", ApiName.SEND_TITLE, {"message": "title"}),
+                ("alpha", ApiName.SEND_ACTIONBAR, {"message": "bar"}),
+            ],
+        )
+
+    def test_llm_status_uses_formatted_status_result(self):
+        """The status tool returns the same readable summary as the chat command."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        async def send_api(name, api, data):
+            return QueQiaoResponse(
+                code=200,
+                api="get_status",
+                post_type="response",
+                status="SUCCESS",
+                data={"server_version": "1.21"},
+            )
+
+        plugin = object.__new__(QueQiaoPlugin)
+        plugin.config_manager = SimpleNamespace(
+            get_server=lambda name: SyncConfig(server_name=name),
+        )
+        plugin.bot = SimpleNamespace(send_api=send_api)
+        event = SimpleNamespace(is_admin=lambda: True)
+
+        result = asyncio.run(plugin.llm_mc_status(event, "alpha"))
+        self.assertIn("服务器 `alpha`", result)
+        self.assertIn("1.21", result)
 
     def test_mc_source_prefix_contains_server_and_player(self):
         """MC-originated messages use a consistent server/player prefix."""

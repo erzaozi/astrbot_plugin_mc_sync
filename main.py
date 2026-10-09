@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 from astrbot.api import logger
@@ -135,10 +136,9 @@ class QueQiaoPlugin(Star):
         """Run Minecraft server APIs as a framework or server administrator."""
 
     @mc.command("status")
-    async def mc_status(self, event: AstrMessageEvent, server_name: str):
-        """Query a server status through the QueQiao API."""
-        result = await self._server_api(event, server_name, ApiName.GET_STATUS, {})
-        yield event.plain_result(self._format_api_result(result))
+    async def mc_status(self, event: AstrMessageEvent, server_name: str = ""):
+        """Query one server, or all servers accessible to the requester."""
+        yield event.plain_result(await self._query_status(event, server_name))
 
     @mc.command("broadcast")
     async def mc_broadcast(
@@ -198,13 +198,11 @@ class QueQiaoPlugin(Star):
     async def llm_mc_get_bound_servers(self, event: AstrMessageEvent) -> str:
         """Get the exact Minecraft server names bound to the current conversation.
 
-        Call this before mc_rcon when the target server name is unknown. Use a
-        returned name as mc_rcon's server_name. If multiple servers are returned
-        and the intended target is unclear, ask the user to select one.
+        Call this before a Minecraft tool when the target server name is unknown.
+        A binding does not grant permission to call server APIs.
 
         Returns:
             A JSON array of bound server names, or a message when none are bound.
-            A binding does not grant permission to execute RCON commands.
         """
         server_names = [
             server.server_name
@@ -214,6 +212,95 @@ class QueQiaoPlugin(Star):
         if not server_names:
             return "当前会话未绑定任何 Minecraft 服务器，请先使用 /sync on <服务器名> 绑定。"
         return json.dumps(server_names, ensure_ascii=False)
+
+    @filter.llm_tool(name="mc_status")
+    async def llm_mc_status(
+        self, event: AstrMessageEvent, server_name: str = ""
+    ) -> str:
+        """Query Minecraft server status.
+
+        Omit server_name to query every server the requester may administer.
+        Use mc_get_bound_servers when an exact server name is needed.
+
+        Args:
+            server_name (string): Optional exact configured server name.
+
+        Returns:
+            A readable status summary or an error for each selected server.
+        """
+        return await self._query_status(event, server_name)
+
+    @filter.llm_tool(name="mc_broadcast")
+    async def llm_mc_broadcast(
+        self, event: AstrMessageEvent, server_name: str, message: str
+    ) -> str:
+        """Broadcast a message to all players on one Minecraft server.
+
+        Args:
+            server_name (string): Exact configured server name.
+            message (string): Message to broadcast.
+
+        Returns:
+            The server response or an access error.
+        """
+        return await self._run_llm_server_api(
+            event, server_name, ApiName.BROADCAST, {"message": message}
+        )
+
+    @filter.llm_tool(name="mc_private")
+    async def llm_mc_private(
+        self, event: AstrMessageEvent, server_name: str, user_id: str, message: str
+    ) -> str:
+        """Send a private message to one Minecraft player.
+
+        Args:
+            server_name (string): Exact configured server name.
+            user_id (string): Target player's user ID.
+            message (string): Private message to send.
+
+        Returns:
+            The server response or an access error.
+        """
+        return await self._run_llm_server_api(
+            event,
+            server_name,
+            ApiName.SEND_PRIVATE_MSG,
+            {"user_id": user_id, "message": message},
+        )
+
+    @filter.llm_tool(name="mc_title")
+    async def llm_mc_title(
+        self, event: AstrMessageEvent, server_name: str, message: str
+    ) -> str:
+        """Show a title to players on one Minecraft server.
+
+        Args:
+            server_name (string): Exact configured server name.
+            message (string): Title text to show.
+
+        Returns:
+            The server response or an access error.
+        """
+        return await self._run_llm_server_api(
+            event, server_name, ApiName.SEND_TITLE, {"message": message}
+        )
+
+    @filter.llm_tool(name="mc_actionbar")
+    async def llm_mc_actionbar(
+        self, event: AstrMessageEvent, server_name: str, message: str
+    ) -> str:
+        """Show an action bar message to players on one Minecraft server.
+
+        Args:
+            server_name (string): Exact configured server name.
+            message (string): Action bar text to show.
+
+        Returns:
+            The server response or an access error.
+        """
+        return await self._run_llm_server_api(
+            event, server_name, ApiName.SEND_ACTIONBAR, {"message": message}
+        )
 
     @filter.llm_tool(name="mc_rcon")
     async def llm_mc_rcon(
@@ -287,6 +374,73 @@ class QueQiaoPlugin(Star):
         player = event.get_sender_name() or event.get_sender_id() or "未知玩家"
         return f"[{server}][{player}] "
 
+    async def _query_status(
+        self, event: AstrMessageEvent, server_name: str = ""
+    ) -> str:
+        """Query and format one server or every server the sender may administer.
+
+        Args:
+            event: The requesting message event.
+            server_name: Exact server name, or empty for all accessible servers.
+
+        Returns:
+            Readable server status or errors.
+        """
+        if server_name:
+            server_names = [server_name]
+        else:
+            server_names = [
+                server.server_name
+                for server in self.config_manager.config.sync_config
+                if event.is_admin() or event.get_sender_id() in server.administrators
+            ]
+        if not server_names:
+            return "没有可查询的服务器"
+
+        results = await asyncio.gather(
+            *(
+                self._server_api(event, name, ApiName.GET_STATUS, {})
+                for name in server_names
+            ),
+            return_exceptions=True,
+        )
+        messages = []
+        for name, result in zip(server_names, results):
+            if isinstance(result, Exception):
+                detail = str(result).strip() or type(result).__name__
+                messages.append(
+                    detail
+                    if detail.startswith(f"服务器 `{name}`")
+                    else f"服务器 `{name}`：{detail}"
+                )
+            else:
+                messages.append(self._format_status_result(name, result))
+        return "\n\n".join(messages)
+
+    async def _run_llm_server_api(
+        self, event: AstrMessageEvent, server_name: str, api: ApiName, data: dict
+    ) -> str:
+        """Run an LLM-requested server API with normal administrator checks.
+
+        Args:
+            event: The requesting message event.
+            server_name: Exact target server name.
+            api: API operation to perform.
+            data: API request body.
+
+        Returns:
+            The server response or a readable error.
+        """
+        try:
+            result = await self._server_api(event, server_name, api, data)
+        except Exception as exc:
+            detail = str(exc).strip() or type(exc).__name__
+            logger.warning(
+                "MC API request failed for %s (%s): %s", server_name, api.value, detail
+            )
+            return f"请求失败：{detail}"
+        return self._format_api_result(result)
+
     async def _server_api(
         self, event: AstrMessageEvent, server_name: str, api: ApiName, data: dict
     ):
@@ -341,8 +495,12 @@ class QueQiaoPlugin(Star):
                 server_name, ApiName.SEND_RCON_COMMAND, {"command": command}
             )
         except Exception as exc:
-            logger.warning("RCON request failed for %s: %s", server_name, exc)
-            return f"RCON 执行失败: {exc}"
+            detail = str(exc).strip()
+            if not detail and isinstance(exc, ConnectionError):
+                detail = f"服务器 `{server_name}` 未连接或连接已断开"
+            detail = detail or type(exc).__name__
+            logger.warning("RCON request failed for %s: %s", server_name, detail)
+            return f"RCON 执行失败: {detail}"
         return self._format_api_result(result)
 
     @staticmethod
@@ -350,9 +508,10 @@ class QueQiaoPlugin(Star):
         """Format a QueQiao response for chat output."""
         if result is None:
             return "请求已发送"
-        success = (
-            getattr(result, "status", "") == "ok" or getattr(result, "code", 1) == 0
-        )
+        success = str(getattr(result, "status", "")).casefold() in {
+            "ok",
+            "success",
+        } or getattr(result, "code", 1) in {0, 200}
         message = str(
             getattr(result, "message", "请求成功" if success else "请求失败")
             or ("请求成功" if success else "请求失败"),
@@ -363,6 +522,60 @@ class QueQiaoPlugin(Star):
                 return json.dumps(data, ensure_ascii=False, indent=2)
             return str(data).strip() or message
         return message
+
+    @staticmethod
+    def _format_status_result(server_name: str, result) -> str:
+        """Summarize the useful fields of a QueQiao get_status response.
+
+        Args:
+            server_name: Configured server name.
+            result: Parsed QueQiao response.
+
+        Returns:
+            Readable status text without large payloads such as the favicon.
+        """
+        data = getattr(result, "data", None)
+        success = str(getattr(result, "status", "")).casefold() in {
+            "ok",
+            "success",
+        } or getattr(result, "code", 1) in {0, 200}
+        if not success or not isinstance(data, dict) or not data:
+            return f"服务器 `{server_name}`：{QueQiaoPlugin._format_api_result(result)}"
+
+        ping = data.get("server_list_ping") or {}
+        players = ping.get("players") or {}
+        cpu = data.get("cpu_information") or {}
+        memory = data.get("memory_information") or {}
+        lines = [f"服务器 `{server_name}`", "状态：查询成功"]
+        server_type = data.get("server_type")
+        version = data.get("server_version")
+        if server_type or version:
+            lines.append(
+                f"类型与版本：{' '.join(str(item) for item in (server_type, version) if item)}"
+            )
+        if ping:
+            lines.append(
+                f"服务器列表查询：{'可用' if ping.get('available') else '不可用'}"
+            )
+            if ping.get("available"):
+                if players.get("online") is not None and players.get("max") is not None:
+                    lines.append(
+                        f"在线玩家：{int(players['online'])}/{int(players['max'])}"
+                    )
+            elif ping.get("error") or ping.get("reason"):
+                lines.append(f"查询原因：{ping.get('error') or ping.get('reason')}")
+        if cpu.get("cpu_cores") is not None:
+            lines.append(f"CPU 核心：{cpu['cpu_cores']}")
+        system_load = cpu.get("system_load")
+        if isinstance(system_load, (int, float)) and 0 <= system_load <= 1:
+            lines.append(f"系统 CPU 负载：{system_load * 100:.1f}%")
+        for key, label in (("jvm_memory", "JVM 内存"), ("physical_memory", "物理内存")):
+            values = memory.get(key) or {}
+            used = values.get("used")
+            total = values.get("max") if key == "jvm_memory" else values.get("total")
+            if isinstance(used, (int, float)) and isinstance(total, (int, float)):
+                lines.append(f"{label}：{used / 1024**3:.2f}/{total / 1024**3:.2f} GiB")
+        return "\n".join(lines)
 
     async def web_config(self):
         """Read or replace plugin configuration for the Dashboard page."""
