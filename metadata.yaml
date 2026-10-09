@@ -1,5 +1,21 @@
-name: astrbot_plugin_mc_sync
+name: 鹊桥 MC 同步插件
 short_desc: MC与多平台消息同步插件 — 基于鹊桥(QueQiao)WebSocket协议
 desc:  MC与QQ消息同步插件 — 基于鹊桥(QueQiao)WebSocket协议，同时支持在 MC 中调用LLM，LLM管理服务器。
 version: 1.0.0
-author: erzaozi
+author: ErZaozi
+astrbot_version: ">=4.17.0"
+support_platforms:
+ - aiocqhttp
+ - qq_official
+ - qq_official_webhook
+ - telegram
+ - wecom
+ - wecom_ai_bot
+ - dingtalk
+ - discord
+ - kook
+social_link: https://github.com/erzaozi
+tags:
+  - mc
+  - minecraft
+  - adapter

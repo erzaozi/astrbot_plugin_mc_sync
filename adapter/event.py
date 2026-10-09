@@ -124,7 +124,7 @@ class QueQiaoMessageEvent(AstrMessageEvent):
     ) -> dict | None:
         if isinstance(segment, Plain):
             return {
-                "text": segment.text,  # 注意原代码有 "text:" 可能是笔误，我们修正为 "text"
+                "text": segment.text,
                 "color": "white",
             }
         if isinstance(segment, Image):
@@ -164,7 +164,7 @@ class QueQiaoMessageEvent(AstrMessageEvent):
                 if name:
                     return {
                         "text": f"@{name}",
-                        "color": "white",
+                        "color": "gold",
                     }
                 else:
                     return None
