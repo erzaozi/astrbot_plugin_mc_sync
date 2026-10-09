@@ -26,26 +26,11 @@
 
 ## 安装插件
 
-#### 1. 克隆仓库
+推荐使用 AstrBot WebUI 安装：
 
-将插件克隆到 AstrBot 的 plugins 目录：
-
-```
-git clone https://github.com/erzaozi/astrbot_plugin_mc_sync.git ./plugins/astrbot_plugin_mc_sync
-```
-
-> [!NOTE]
-> 如果你的网络环境较差，无法连接到 GitHub，可以使用 [GitHub Proxy](https://ghproxy.link/) 提供的文件代理加速下载服务
-
-#### 2. 安装依赖
-
-```
-pip install -r ./plugins/astrbot_plugin_mc_sync/requirements.txt
-```
-
-#### 3. 重启 AstrBot
-
-重启后在 AstrBot 中启用该插件即可。
+1. 打开 AstrBot WebUI（默认 `http://localhost:6185`），进入「插件管理」
+2. 点击「添加插件」，填写仓库地址：`https://github.com/erzaozi/astrbot_plugin_mc_sync.git`
+3. 安装完成后在插件列表启用即可
 
 ## 依赖 Mod
 
