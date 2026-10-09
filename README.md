@@ -21,6 +21,7 @@
 - [x] Title / ActionBar 消息推送
 - [x] RCON 命令白名单执行
 - [x] LLM 工具调用 RCON
+- [x] LLM 查询当前会话绑定的服务器名称
 - [x] 玩家进出 / 死亡 / 成就事件转发
 - [x] 网页端配置面板与状态页
 
@@ -47,6 +48,7 @@
 | ------ | ---- |
 | `server_name` | 服务器名（命令中使用的标识） |
 | `umo_list` | 绑定到该服务器的会话列表 |
+| `forward_session_messages` | 是否将已绑定会话的消息转发到该服务器，默认开启；关闭后仍可接收服务器消息 |
 | `cicode_enabled` | 是否启用 CICode 图片 |
 | `administrators` | 服务器管理员 UID 列表 |
 | `forward_player_join` | 是否转发玩家加入事件 |
@@ -72,6 +74,11 @@
 | `/mc title <服务器名> <消息>` | 向服务器发送 Title |
 | `/mc actionbar <服务器名> <消息>` | 向服务器发送 ActionBar |
 | `/mc rcon <服务器名> <命令>` | 在服务器执行 RCON 命令（白名单内） |
+
+## AI 工具
+
+- `mc_get_bound_servers`：无需参数，返回当前会话绑定的全部服务器名称；未绑定时给出提示。
+- `mc_rcon`：使用查询到的准确服务器名称作为 `server_name` 执行命令。绑定多台服务器且目标不明确时，AI 应先询问用户选择。执行仍需满足管理员权限、RCON 开关及命令白名单要求。
 
 ## 详细使用方法
 

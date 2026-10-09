@@ -1,6 +1,7 @@
 """Unit tests for MC synchronization configuration and routing."""
 
 import asyncio
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -10,10 +11,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from astrbot_plugin_mc_sync.adapter import dispatch
-from astrbot_plugin_mc_sync.filter import ServerAdminFilter
-from astrbot_plugin_mc_sync.adapter.models import QueQiaoResponse
 from astrbot_plugin_mc_sync.adapter.adapter_base import QueQiaoPlatformBase
+from astrbot_plugin_mc_sync.adapter.models import QueQiaoResponse
 from astrbot_plugin_mc_sync.adapter.queqiao_manager import QueQiaoBridge
+from astrbot_plugin_mc_sync.filter import ServerAdminFilter
 from astrbot_plugin_mc_sync.utils.config import PluginConfig, SyncConfig
 
 
@@ -25,7 +26,9 @@ class McSyncTests(unittest.TestCase):
         config = PluginConfig(
             sync_config=[
                 SyncConfig(server_name="alpha", cicode_enabled=True, rcon_enabled=True),
-                SyncConfig(server_name="beta", cicode_enabled=False, forward_player_death=False),
+                SyncConfig(
+                    server_name="beta", cicode_enabled=False, forward_player_death=False
+                ),
             ],
         )
 
@@ -48,11 +51,64 @@ class McSyncTests(unittest.TestCase):
             calls.append((server_name, cicode_enabled))
             return True
 
-        with patch.object(dispatch, "ConfigManager", return_value=SimpleNamespace(config=config)):
-            result = asyncio.run(dispatch.send_message_by_umo("umo", object(), send_func, object()))
+        with patch.object(
+            dispatch, "ConfigManager", return_value=SimpleNamespace(config=config)
+        ):
+            result = asyncio.run(
+                dispatch.send_message_by_umo("umo", object(), send_func, object())
+            )
 
         self.assertTrue(result)
         self.assertEqual(sorted(calls), [("alpha", True), ("beta", False)])
+
+    def test_session_forwarding_switch_only_controls_outbound_messages(self):
+        """Disabled outbound routing leaves server-to-session delivery intact."""
+        config = PluginConfig(
+            sync_config=[
+                SyncConfig(server_name="enabled", umo_list=["umo"]),
+                SyncConfig(
+                    server_name="disabled",
+                    umo_list=["umo"],
+                    forward_session_messages=False,
+                ),
+            ],
+        )
+        outbound_calls = []
+        inbound_calls = []
+
+        async def send_outbound(bot, chain, server_name, cicode_enabled):
+            outbound_calls.append(server_name)
+            return True
+
+        async def send_inbound(umo, chain):
+            inbound_calls.append(umo)
+            return True
+
+        with patch.object(
+            dispatch, "ConfigManager", return_value=SimpleNamespace(config=config)
+        ):
+            self.assertTrue(
+                asyncio.run(
+                    dispatch.send_message_by_umo(
+                        "umo", object(), send_outbound, object()
+                    )
+                )
+            )
+            self.assertTrue(
+                asyncio.run(
+                    dispatch.send_message_by_server("disabled", object(), send_inbound)
+                )
+            )
+
+        self.assertEqual(outbound_calls, ["enabled"])
+        self.assertEqual(inbound_calls, ["umo"])
+
+    def test_session_forwarding_defaults_to_enabled_for_existing_config(self):
+        """Existing server records preserve their previous forwarding behavior."""
+        server = SyncConfig.model_validate(
+            {"server_name": "legacy", "umo_list": ["umo"]}
+        )
+        self.assertTrue(server.forward_session_messages)
 
     def test_server_admin_filter_accepts_framework_or_server_administrator(self):
         """The command filter grants only framework or matching server administrators."""
@@ -90,8 +146,39 @@ class McSyncTests(unittest.TestCase):
         )
         self.assertIn("Diamond", response.data)
 
+    def test_llm_bound_servers_are_scoped_to_current_conversation(self):
+        """Discovery returns all and only servers bound to the requesting session."""
+        from astrbot_plugin_mc_sync.main import QueQiaoPlugin
+
+        plugin = object.__new__(QueQiaoPlugin)
+        plugin.config_manager = SimpleNamespace(
+            config=PluginConfig(
+                sync_config=[
+                    SyncConfig(server_name="生存服", umo_list=["current"]),
+                    SyncConfig(server_name="creative", umo_list=["current", "other"]),
+                    SyncConfig(server_name="private", umo_list=["other"]),
+                ]
+            ),
+        )
+        for origin, expected in [
+            ("current", ["生存服", "creative"]),
+            ("other", ["creative", "private"]),
+            ("unbound", None),
+        ]:
+            with self.subTest(origin=origin):
+                result = asyncio.run(
+                    plugin.llm_mc_get_bound_servers(
+                        SimpleNamespace(unified_msg_origin=origin),
+                    )
+                )
+                if expected is None:
+                    self.assertIn("未绑定", result)
+                else:
+                    self.assertEqual(json.loads(result), expected)
+
     def test_callback_accepts_connection_context_keywords(self):
         """Callback routing metadata must not break response futures."""
+
         async def run_callback():
             bridge = object.__new__(QueQiaoBridge)
             future = asyncio.get_running_loop().create_future()
@@ -177,6 +264,7 @@ class McSyncTests(unittest.TestCase):
 
     def test_mc_framework_message_keeps_raw_command_text(self):
         """Framework parsing receives raw MC text without the display prefix."""
+
         class TestAdapter(QueQiaoPlatformBase):
             def meta(self):
                 return None

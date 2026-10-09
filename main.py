@@ -83,7 +83,9 @@ class QueQiaoPlugin(Star):
 
     @sync.command("admin-add")
     @filter.permission_type(filter.PermissionType.ADMIN)
-    async def admin_add(self, event: AstrMessageEvent, server_name: str, user_id: str = ""):
+    async def admin_add(
+        self, event: AstrMessageEvent, server_name: str, user_id: str = ""
+    ):
         """Add a server administrator by UID or an At component.
 
         Args:
@@ -103,11 +105,15 @@ class QueQiaoPlugin(Star):
         if admin_id not in server.administrators:
             server.administrators.append(admin_id)
             self.config_manager.save()
-        yield event.plain_result(f"已将 `{admin_id}` 添加为 `{server_name}` 的服务器管理员")
+        yield event.plain_result(
+            f"已将 `{admin_id}` 添加为 `{server_name}` 的服务器管理员"
+        )
 
     @sync.command("admin-remove")
     @filter.permission_type(filter.PermissionType.ADMIN)
-    async def admin_remove(self, event: AstrMessageEvent, server_name: str, user_id: str):
+    async def admin_remove(
+        self, event: AstrMessageEvent, server_name: str, user_id: str
+    ):
         """Remove a server administrator by UID.
 
         Args:
@@ -135,13 +141,23 @@ class QueQiaoPlugin(Star):
         yield event.plain_result(self._format_api_result(result))
 
     @mc.command("broadcast")
-    async def mc_broadcast(self, event: AstrMessageEvent, server_name: str, message: GreedyStr):
+    async def mc_broadcast(
+        self, event: AstrMessageEvent, server_name: str, message: GreedyStr
+    ):
         """Broadcast a message to a selected Minecraft server."""
-        result = await self._server_api(event, server_name, ApiName.BROADCAST, {"message": message})
+        result = await self._server_api(
+            event, server_name, ApiName.BROADCAST, {"message": message}
+        )
         yield event.plain_result(self._format_api_result(result))
 
     @mc.command("private")
-    async def mc_private(self, event: AstrMessageEvent, server_name: str, user_id: str, message: GreedyStr):
+    async def mc_private(
+        self,
+        event: AstrMessageEvent,
+        server_name: str,
+        user_id: str,
+        message: GreedyStr,
+    ):
         """Send a private message to a Minecraft player."""
         result = await self._server_api(
             event,
@@ -152,25 +168,61 @@ class QueQiaoPlugin(Star):
         yield event.plain_result(self._format_api_result(result))
 
     @mc.command("title")
-    async def mc_title(self, event: AstrMessageEvent, server_name: str, message: GreedyStr):
+    async def mc_title(
+        self, event: AstrMessageEvent, server_name: str, message: GreedyStr
+    ):
         """Send a title to a selected Minecraft server."""
-        result = await self._server_api(event, server_name, ApiName.SEND_TITLE, {"message": message})
+        result = await self._server_api(
+            event, server_name, ApiName.SEND_TITLE, {"message": message}
+        )
         yield event.plain_result(self._format_api_result(result))
 
     @mc.command("actionbar")
-    async def mc_actionbar(self, event: AstrMessageEvent, server_name: str, message: GreedyStr):
+    async def mc_actionbar(
+        self, event: AstrMessageEvent, server_name: str, message: GreedyStr
+    ):
         """Send an action bar message to a selected Minecraft server."""
-        result = await self._server_api(event, server_name, ApiName.SEND_ACTIONBAR, {"message": message})
+        result = await self._server_api(
+            event, server_name, ApiName.SEND_ACTIONBAR, {"message": message}
+        )
         yield event.plain_result(self._format_api_result(result))
 
     @mc.command("rcon")
-    async def mc_rcon(self, event: AstrMessageEvent, server_name: str, command: GreedyStr):
+    async def mc_rcon(
+        self, event: AstrMessageEvent, server_name: str, command: GreedyStr
+    ):
         """Execute a permitted RCON command from chat."""
         yield event.plain_result(await self._run_rcon(event, server_name, command))
 
+    @filter.llm_tool(name="mc_get_bound_servers")
+    async def llm_mc_get_bound_servers(self, event: AstrMessageEvent) -> str:
+        """Get the exact Minecraft server names bound to the current conversation.
+
+        Call this before mc_rcon when the target server name is unknown. Use a
+        returned name as mc_rcon's server_name. If multiple servers are returned
+        and the intended target is unclear, ask the user to select one.
+
+        Returns:
+            A JSON array of bound server names, or a message when none are bound.
+            A binding does not grant permission to execute RCON commands.
+        """
+        server_names = [
+            server.server_name
+            for server in self.config_manager.config.sync_config
+            if event.unified_msg_origin in server.umo_list
+        ]
+        if not server_names:
+            return "当前会话未绑定任何 Minecraft 服务器，请先使用 /sync on <服务器名> 绑定。"
+        return json.dumps(server_names, ensure_ascii=False)
+
     @filter.llm_tool(name="mc_rcon")
-    async def llm_mc_rcon(self, event: AstrMessageEvent, server_name: str, command: str) -> str:
+    async def llm_mc_rcon(
+        self, event: AstrMessageEvent, server_name: str, command: str
+    ) -> str:
         """Execute an RCON command for an explicitly selected server.
+
+        If the server name is unknown, call mc_get_bound_servers first to discover
+        the servers bound to the current conversation.
 
         Args:
             server_name (string): The exact configured server name.
@@ -185,7 +237,9 @@ class QueQiaoPlugin(Star):
     async def on_queqiao(self, event: AstrMessageEvent):
         """Forward Minecraft-originated messages to bound conversations."""
         source_prefix = self._mc_source_prefix(event)
-        message_chain = event.chain_result([Plain(text=source_prefix), *event.get_messages()])
+        message_chain = event.chain_result(
+            [Plain(text=source_prefix), *event.get_messages()]
+        )
         await send_message_by_server(
             event.session.session_id,
             message_chain,
@@ -200,7 +254,9 @@ class QueQiaoPlugin(Star):
         if event.get_platform_name() == "QueQiao":
             return
         source_prefix = self._external_source_prefix(event)
-        message_chain = event.chain_result([Plain(text=source_prefix), *event.get_messages()])
+        message_chain = event.chain_result(
+            [Plain(text=source_prefix), *event.get_messages()]
+        )
         await send_message_by_umo(
             event.unified_msg_origin,
             message_chain,
@@ -231,7 +287,9 @@ class QueQiaoPlugin(Star):
         player = event.get_sender_name() or event.get_sender_id() or "未知玩家"
         return f"[{server}][{player}] "
 
-    async def _server_api(self, event: AstrMessageEvent, server_name: str, api: ApiName, data: dict):
+    async def _server_api(
+        self, event: AstrMessageEvent, server_name: str, api: ApiName, data: dict
+    ):
         """Send a server API request after checking server access.
 
         Args:
@@ -250,7 +308,9 @@ class QueQiaoPlugin(Star):
             raise PermissionError("你不是该服务器管理员")
         return await self.bot.send_api(server_name, api, data)
 
-    async def _run_rcon(self, event: AstrMessageEvent, server_name: str, command: str) -> str:
+    async def _run_rcon(
+        self, event: AstrMessageEvent, server_name: str, command: str
+    ) -> str:
         """Validate and execute one RCON command.
 
         Args:
@@ -277,7 +337,9 @@ class QueQiaoPlugin(Star):
         ):
             return "该 RCON 命令不在白名单中"
         try:
-            result = await self.bot.send_api(server_name, ApiName.SEND_RCON_COMMAND, {"command": command})
+            result = await self.bot.send_api(
+                server_name, ApiName.SEND_RCON_COMMAND, {"command": command}
+            )
         except Exception as exc:
             logger.warning("RCON request failed for %s: %s", server_name, exc)
             return f"RCON 执行失败: {exc}"
@@ -288,7 +350,9 @@ class QueQiaoPlugin(Star):
         """Format a QueQiao response for chat output."""
         if result is None:
             return "请求已发送"
-        success = getattr(result, "status", "") == "ok" or getattr(result, "code", 1) == 0
+        success = (
+            getattr(result, "status", "") == "ok" or getattr(result, "code", 1) == 0
+        )
         message = str(
             getattr(result, "message", "请求成功" if success else "请求失败")
             or ("请求成功" if success else "请求失败"),

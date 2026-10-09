@@ -173,9 +173,9 @@
       return `<article class="panel server" data-index="${index}">
         <div class="server-head"><div class="server-title"><span class="server-index">服务器 ${index + 1}</span><input data-key="server_name" value="${escapeHtml(server.server_name)}" placeholder="例如 survival-1" aria-label="服务器名称"></div><button class="button danger small remove-server" type="button">删除服务器</button></div>
         <div class="server-fields">
-          <div class="field full"><label>绑定会话 UID</label><textarea data-key="umo_list" placeholder="每行一个 UMO，也支持逗号分隔">${escapeHtml((server.umo_list || []).join("\n"))}</textarea><p class="hint">消息只会转发到这些已绑定的会话。</p></div>
+          <div class="field full"><label>绑定会话 UID</label><textarea data-key="umo_list" placeholder="每行一个 UMO，也支持逗号分隔">${escapeHtml((server.umo_list || []).join("\n"))}</textarea><p class="hint">服务器消息只会转发到这些已绑定的会话。</p></div>
           <div class="field full"><label>服务器管理员 UID</label><textarea data-key="administrators" placeholder="每行一个 UID，也支持逗号分隔">${escapeHtml((server.administrators || []).join("\n"))}</textarea><p class="hint">框架 ADMIN 始终有效；这里的 UID 可使用 admin-add 命令维护。</p></div>
-          <fieldset class="field"><legend>功能开关</legend><div class="toggles"><label class="toggle"><input type="checkbox" data-key="cicode_enabled" ${server.cicode_enabled !== false ? "checked" : ""}>启用 CICode</label>${eventToggles}</div></fieldset>
+          <fieldset class="field"><legend>功能开关</legend><div class="toggles"><label class="toggle"><input type="checkbox" data-key="forward_session_messages" ${server.forward_session_messages !== false ? "checked" : ""}>转发会话消息到服务器</label><label class="toggle"><input type="checkbox" data-key="cicode_enabled" ${server.cicode_enabled !== false ? "checked" : ""}>启用 CICode</label>${eventToggles}</div></fieldset>
           <fieldset class="field"><legend>RCON</legend><label class="toggle"><input type="checkbox" data-key="rcon_enabled" ${server.rcon_enabled ? "checked" : ""}>允许 RCON 调用</label><p class="hint">仅服务器管理员可用，且必须命中白名单。</p></fieldset>
           <div class="field full"><label>RCON 命令白名单</label><textarea data-key="rcon_command_whitelist" placeholder="每行一个命令前缀，例如 list 或 time set">${escapeHtml((server.rcon_command_whitelist || []).join("\n"))}</textarea><p class="hint">填写 * 可允许所有命令。命令不需要填写开头的斜杠。</p></div>
         </div>
@@ -218,7 +218,7 @@
     }
 
     $("#add-server").addEventListener("click", () => {
-      state.config.sync_config.push({ server_name: "", umo_list: [], cicode_enabled: true, administrators: [], forward_player_join: true, forward_player_quit: true, forward_player_death: true, forward_player_achievement: true, rcon_enabled: false, rcon_command_whitelist: [] });
+      state.config.sync_config.push({ server_name: "", umo_list: [], forward_session_messages: true, cicode_enabled: true, administrators: [], forward_player_join: true, forward_player_quit: true, forward_player_death: true, forward_player_achievement: true, rcon_enabled: false, rcon_command_whitelist: [] });
       renderServers();
       const names = document.querySelectorAll('[data-key="server_name"]');
       names[names.length - 1]?.focus();

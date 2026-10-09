@@ -1,14 +1,17 @@
 import asyncio
-from typing import Callable, Awaitable
-from astrbot.api.event import MessageChain
+from collections.abc import Awaitable, Callable
+
 from astrbot.api import logger
-from . import QueQiaoBridge
+from astrbot.api.event import MessageChain
+
 from ..utils.config import ConfigManager
+from . import QueQiaoBridge
+
 
 async def send_message_by_server(
-        server_name: str,
-        message_chain: MessageChain,
-        send_func: Callable[[str, MessageChain], Awaitable[bool | None]]
+    server_name: str,
+    message_chain: MessageChain,
+    send_func: Callable[[str, MessageChain], Awaitable[bool | None]],
 ) -> bool:
     """
     向指定服务器绑定的所有 umo 并发发送消息。
@@ -50,15 +53,16 @@ async def send_message_by_server(
             all_success = False
     return all_success
 
+
 async def send_message_by_umo(
-        umo: str,
-        message_chain: MessageChain,
-        send_func: Callable[..., Awaitable[bool | None]],
-        bot: QueQiaoBridge,
+    umo: str,
+    message_chain: MessageChain,
+    send_func: Callable[..., Awaitable[bool | None]],
+    bot: QueQiaoBridge,
 ) -> bool:
     config = ConfigManager().config
     sync_list = config.sync_config
-    targets = [s for s in sync_list if umo in s.umo_list]
+    targets = [s for s in sync_list if umo in s.umo_list and s.forward_session_messages]
     if not targets:
         return False
 
